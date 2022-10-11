@@ -1,0 +1,146 @@
+---
+title: "MA304 Visualizing Policing dataset from Dallas, Texas in 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Visualization Markdown document (a short description of the file)
+
+In this document we are about to provide plots with some explanation on each of these plot to help us achieving a better picture and deeper understanding of the [dataset](https://www.kaggle.com/center-for-policing-equity/data-science-for-good) mentioned in the title of this file. I tried to use class and lab materials as a basis. Each plot comes with a short description.
+
+## Adding the required libraries
+
+libraries : dplyr, ggplot2, scales, plotly, ggcorrplot
+
+```{r warning=FALSE,message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(scales)
+if(!require("plotly")) install.packages("plotly")
+if(!require("ggcorrplot")) install.packages("ggcorrplot")
+library("ggcorrplot")
+library(plotly)
+library(rmarkdown)
+if(!require("leaflet")) install.packages("leaflet")
+library(leaflet)
+```
+
+Reading the dataset and providing a set of records from the data could be heplful
+
+```{r}
+data = read.csv("37-00049_UOF-P_2016_prepped.csv")
+paged_table(head(data))
+```
+
+## Boxplot and Violins
+
+it would be interesting to see more experienced police forces in this dataset are males or females
+it seems population of experienced officers has more tendency to male gender.
+```{r, echo=TRUE}
+boxo = ggplot(data=data, aes(y=OFFICER_YEARS_ON_FORCE, x=OFFICER_GENDER, fill = OFFICER_GENDER)) + geom_boxplot(width = 0.15) + labs(x = "Gender", y = "Years on Force") +geom_violin(trim = FALSE, alpha = 0.5) 
+ggplotly(boxo)
+```
+
+## Histogram
+
+histogram of incidents in each 2-month period of 2016
+
+```{r, echo=TRUE, warning=FALSE,message=FALSE}
+data$INCIDENT_DATE = as.Date(data$INCIDENT_DATE, fill=data$INCIDENT_DATE)
+histo = ggplot(data,aes(x=INCIDENT_DATE), seq(ISOdate(2016, 1, 1), ISOdate(2017, 1, 1), "months"))+
+ stat_bin(colour="black", binwidth=4, alpha=0.5,
+ position="identity") + theme_bw()+
+ xlab("Number of months")+
+ ylab("Count of incidents")
+
+ggplotly(histo)
+
+```
+
+analysis of injury of officers based on their race and the years of their experience in police force could be important.
+we can see that asian officers and american indian officers tend to less injury. Furthermore, White, Black and Hispanic police officers seems to be more in danger of being injured.
+
+```{r, echo=TRUE}
+
+sub_data = data %>% dplyr::filter(OFFICER_YEARS_ON_FORCE & !is.na(OFFICER_INJURY) & !is.na(OFFICER_RACE)) %>%
+  mutate(factor(OFFICER_INJURY, levels = c("Yes", "No"), labels = c("INJURY EXPERINCE", "NEVER INJURED")))
+
+
+faceto = sub_data %>%
+  ggplot(aes(OFFICER_RACE, OFFICER_YEARS_ON_FORCE, color = OFFICER_RACE)) + geom_point() + facet_grid(OFFICER_INJURY ~ OFFICER_RACE) + labs(x="Officer Race", y = "Years on Force") + theme(axis.ticks.x = element_blank(),
+        axis.text.x = element_blank())
+
+ggplotly(faceto)
+
+```
+
+It would be intuitive to see the frequency of injury among subjects of different races (unreported races (NULL) have been considered in the analysis as well to see how many injured cases are not being specified by their races.)
+
+```{r, echo = TRUE, warning=FALSE,message=FALSE}
+pie_data = data[data$SUBJECT_INJURY=="Yes",] %>% group_by(SUBJECT_RACE) %>% summarise(count = n())
+baro = ggplot(pie_data, aes(x=pie_data$SUBJECT_RACE, y=count, fill=pie_data$SUBJECT_RACE))+
+geom_bar(width = 1, stat = "identity") + labs(x = "Race of Subject", y = "injury counts", fill = "Subject Races by color")
+ggplotly(baro)
+```
+Wrap facet bar plot to see different types of injuries distribution among different gender groups of officers.
+the plot indicates that female officers are less injury prone or in danger of different injuries in comparison with male officers.
+```{r, echo = TRUE, warning=FALSE,message=FALSE}
+s_data = data[data$OFFICER_INJURY=="Yes",] %>% group_by(OFFICER_INJURY_TYPE, OFFICER_GENDER) %>% summarise(count = n())
+s_data = s_data[s_data$count>5,]
+bso = ggplot(s_data, aes(x=s_data$OFFICER_INJURY_TYPE, y=count, fill=s_data$OFFICER_INJURY_TYPE))+
+geom_bar(width = 1, stat = "identity") + labs(x = "Type of Injury by color", y = "injury counts", fill = "Type of Injury") + facet_wrap(s_data$OFFICER_GENDER~.)+ theme(axis.ticks.x = element_blank(), axis.text.x = element_blank())
+ggplotly(bso)
+```
+
+# Map of incident cases by their reason
+the map below shows the incident cases and their reason in an interactive way. a set of reason exist and after ticking each reason you have it visible.
+
+```{r}
+cdata = data[,32:36]
+cdata = na.omit(cdata)
+map <- leaflet(cdata)%>%
+  # Base groups
+  addTiles(group = "OSM (default)") %>%
+  addProviderTiles(providers$Stamen.TonerLite, group = "Toner Lite")
+
+map <- map%>% addCircles(data = cdata[cdata$INCIDENT_REASON=="Arrest",], 
+              group = "Arrest",col="#d73027",lng = ~LOCATION_LONGITUDE, lat = ~LOCATION_LATITUDE)%>%
+  addCircles(data = cdata[cdata$INCIDENT_REASON=="Service Call",],
+              group = "Service Call",col="#f46d43",lng = ~LOCATION_LONGITUDE, lat = ~LOCATION_LATITUDE)%>%
+  addCircles(data = cdata[cdata$INCIDENT_REASON=="Call for Cover",], 
+              group = "Call for Cover",col="#fdae61",lng = ~LOCATION_LONGITUDE, lat = ~LOCATION_LATITUDE)%>%
+  addCircles(data = cdata[cdata$INCIDENT_REASON=="Suspicious Activity",], 
+              group = "Suspicious Activity",col="#fee090",lng = ~LOCATION_LONGITUDE, lat = ~LOCATION_LATITUDE)%>%
+  addCircles(data = cdata[cdata$INCIDENT_REASON=="Crowd Control",], 
+              group = "Crowd Control",col="#ffffbf",lng = ~LOCATION_LONGITUDE, lat = ~LOCATION_LATITUDE)%>%
+  addCircles(data = cdata[cdata$INCIDENT_REASON=="Warrant Execution",], 
+              group = "Warrant Execution",col="#e0f3f8",lng = ~LOCATION_LONGITUDE, lat = ~LOCATION_LATITUDE)%>%
+  addCircles(data = cdata[cdata$INCIDENT_REASON=="Traffic Stop",], 
+              group = "Traffic Stop",col="#abd9e9",lng = ~LOCATION_LONGITUDE, lat = ~LOCATION_LATITUDE)%>%
+  addCircles(data = cdata[cdata$INCIDENT_REASON=="Off-Duty Incident",], 
+              group = "Off-Duty Incident",col="#74add1",lng = ~LOCATION_LONGITUDE, lat = ~LOCATION_LATITUDE)%>%
+  addCircles(data = cdata[cdata$INCIDENT_REASON=="Pedestrian Stop",], 
+              group = "Pedestrian Stop",col="#4575b4",lng = ~LOCATION_LONGITUDE, lat = ~LOCATION_LATITUDE)%>%
+  addCircles(data = cdata[cdata$INCIDENT_REASON=="Off-Duty Employment",], 
+              group = "Off-Duty Employment",col="#4575b4",lng = ~LOCATION_LONGITUDE, lat = ~LOCATION_LATITUDE)%>%
+  addPolygons(data = cdata, lng = ~LOCATION_LONGITUDE, lat = ~LOCATION_LATITUDE, fill = F, weight = 2, group = "cdata")
+map%>%  addLayersControl(
+    baseGroups = c("Default", "Toner Lite"),
+    overlayGroups = c("Arrest","Service Call", "Call for Cover","Suspicious Activity","Crowd Control","Warrant Execution", "Traffic Stop", "Off-Duty Incident","Pedestrian Stop", "Off-Duty Employment"),
+    options = layersControlOptions(collapsed = TRUE))  
+```
+## Correlation Matrix
+the interesting part of this plot is the last column of this lower triangular matrix
+which shows the relationship of the arrest history among different races with the correlation coefficient on each entry.
+NULL refers to unreported cases.
+```{r}
+cordata = data[data$SUBJECT_WAS_ARRESTED=="Yes",] %>% group_by(SUBJECT_RACE) %>% summarise(count_arrested = n())
+corr = model.matrix(~0+., data=cordata) %>% 
+  cor(use="pairwise.complete.obs") %>% 
+ggcorrplot(show.diag = T, type="lower", lab=TRUE, lab_size=3, tl.cex = 8)
+ggplotly(corr)
+```
+
